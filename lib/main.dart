@@ -4,7 +4,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // For saving user data
 import 'chats_page.dart'; // Import the ChatsPage from chats_page.dart
+import 'EditProfilePage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,11 +25,13 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         appBarTheme: AppBarTheme(
           backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          foregroundColor: Colors.grey, // Grey color for app bar text
         ),
         textTheme: TextTheme(
-          bodyLarge: TextStyle(color: Colors.black),
-          bodyMedium: TextStyle(color: Colors.black54),
+          bodyLarge:
+              TextStyle(color: Colors.grey), // Grey text for large body text
+          bodyMedium: TextStyle(
+              color: Colors.grey[600]), // Slightly darker grey for medium text
         ),
         colorScheme:
             ColorScheme.fromSwatch().copyWith(secondary: Colors.blueAccent),
@@ -38,11 +42,11 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.black,
         appBarTheme: AppBarTheme(
           backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
+          foregroundColor: Colors.grey, // Grey color for dark mode app bar text
         ),
         textTheme: TextTheme(
-          bodyLarge: TextStyle(color: Colors.white),
-          bodyMedium: TextStyle(color: Colors.white70),
+          bodyLarge: TextStyle(color: Colors.grey), // Grey text for dark mode
+          bodyMedium: TextStyle(color: Colors.grey[600]),
         ),
         colorScheme:
             ColorScheme.fromSwatch().copyWith(secondary: Colors.redAccent),
@@ -59,10 +63,20 @@ class SplashScreen extends StatefulWidget {
   _SplashScreenState createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      duration: Duration(seconds: 2),
+      vsync: this,
+    );
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _controller.forward();
     _navigateToLogin();
   }
 
@@ -75,17 +89,32 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FlutterLogo(size: 100),
-            SizedBox(height: 20),
-            Text('Welcome to Life Next Messenger',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          ],
+        child: FadeTransition(
+          opacity: _animation,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FlutterLogo(size: 100),
+              SizedBox(height: 20),
+              Text(
+                'Welcome to Life Next Messenger',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey, // Grey text color
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -102,10 +131,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final String _defaultProfileImageUrl =
+      'https://example.com/default_profile.png';
 
   bool _isSignupMode = false;
-
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   Future<void> _loginUser() async {
@@ -129,12 +162,23 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError("Passwords do not match");
       return;
     }
+
     try {
-      await _auth.createUserWithEmailAndPassword(
+      UserCredential userCredential =
+          await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      await _auth.currentUser!.sendEmailVerification();
+
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'profileImage':
+            _defaultProfileImageUrl, // Using the default profile image
+      });
+
+      await userCredential.user!.sendEmailVerification();
       _showMessage("Verification email sent. Please check your email.");
     } catch (e) {
       _showError(e.toString());
@@ -173,11 +217,11 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Error'),
-        content: Text(message),
+        content: Text(message, style: TextStyle(color: Colors.grey)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK'),
+            child: Text('OK', style: TextStyle(color: Colors.grey)),
           ),
         ],
       ),
@@ -186,7 +230,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(content: Text(message, style: TextStyle(color: Colors.grey))),
     );
   }
 
@@ -201,6 +245,16 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
+            if (_isSignupMode) ...[
+              TextField(
+                controller: _firstNameController,
+                decoration: InputDecoration(labelText: 'First Name'),
+              ),
+              TextField(
+                controller: _lastNameController,
+                decoration: InputDecoration(labelText: 'Last Name'),
+              ),
+            ],
             TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
@@ -227,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: () => _signInWithGoogle(),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.black,
-                backgroundColor: Colors.white,
+                backgroundColor: const Color.fromARGB(61, 244, 67, 54),
                 side: BorderSide(color: Colors.black),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -245,13 +299,17 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             TextButton(
               onPressed: () => setState(() => _isSignupMode = !_isSignupMode),
-              child: Text(_isSignupMode
-                  ? 'Already have an account? Login'
-                  : 'Create an Account'),
+              child: Text(
+                _isSignupMode
+                    ? 'Already have an account? Login'
+                    : 'Create an Account',
+                style: TextStyle(color: Colors.grey),
+              ),
             ),
             TextButton(
               onPressed: () => _toggleFormMode(FormMode.forgotPassword),
-              child: Text('Forgot Password?'),
+              child: Text('Forgot Password?',
+                  style: TextStyle(color: Colors.grey)),
             ),
           ],
         ),
@@ -319,7 +377,7 @@ class _MainChatsPageState extends State<MainChatsPage> {
       case 2:
         return Center(child: Text('Favorites'));
       case 3:
-        return Center(child: Text('Settings'));
+        return EditProfilePage();
       default:
         return Center(child: Text('Unknown'));
     }

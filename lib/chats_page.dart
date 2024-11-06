@@ -13,11 +13,11 @@ class ChatsPage extends StatefulWidget {
 
 class _ChatsPageState extends State<ChatsPage> {
   final TextEditingController _messageController = TextEditingController();
-  final TextEditingController _inviteController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   String _selectedContact = '';
+  String _contactName = 'Contact Name'; // Placeholder for contact name
   User? get currentUser => _auth.currentUser;
 
   Future<void> _sendMessage() async {
@@ -30,50 +30,6 @@ class _ChatsPageState extends State<ChatsPage> {
       });
       _messageController.clear();
     }
-  }
-
-  Future<void> _showInviteDialog() async {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Invite a Friend'),
-          content: TextField(
-            controller: _inviteController,
-            decoration: InputDecoration(hintText: 'Enter email'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                final email = _inviteController.text;
-                // Check if user exists
-                final userDoc = await _firestore
-                    .collection('users')
-                    .where('email', isEqualTo: email)
-                    .get();
-                if (userDoc.docs.isNotEmpty) {
-                  // User exists
-                  final userId = userDoc.docs.first.id;
-                  setState(() {
-                    _selectedContact = userId;
-                  });
-                  Navigator.of(context).pop();
-                } else {
-                  // User does not exist
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text('User not found')));
-                }
-              },
-              child: Text('Invite'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Widget _buildMessageList() {
@@ -102,46 +58,57 @@ class _ChatsPageState extends State<ChatsPage> {
           itemCount: messages.length,
           itemBuilder: (context, index) {
             var message = messages[index];
-            return ListTile(
-              title: Text(
-                message['text'],
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                message['sender'],
-                style: TextStyle(color: Colors.white54),
-              ),
-              trailing: IconButton(
-                icon: Icon(Icons.delete, color: Colors.red),
-                onPressed: () async {
-                  bool? confirmDelete = await showDialog(
-                    context: context,
-                    builder: (context) {
-                      return AlertDialog(
-                        title: Text('Delete Message'),
-                        content: Text(
-                            'Are you sure you want to delete this message?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: Text('Delete'),
-                          ),
-                        ],
-                      );
-                    },
-                  );
+            return GestureDetector(
+              onLongPress: () async {
+                bool? confirmDelete = await showDialog(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: Text('Delete Message'),
+                      content:
+                          Text('Are you sure you want to delete this message?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text('Delete'),
+                        ),
+                      ],
+                    );
+                  },
+                );
 
-                  if (confirmDelete ?? false) {
-                    await _firestore
-                        .collection('messages')
-                        .doc(message.id)
-                        .delete();
-                  }
-                },
+                if (confirmDelete ?? false) {
+                  await _firestore
+                      .collection('messages')
+                      .doc(message.id)
+                      .delete();
+                }
+              },
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 5.0, horizontal: 10.0),
+                padding: EdgeInsets.all(10.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey[800],
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      message['text'],
+                      style: TextStyle(color: Colors.white, fontSize: 16.0),
+                    ),
+                    SizedBox(height: 5.0),
+                    Text(
+                      message['sender'],
+                      style: TextStyle(color: Colors.white54, fontSize: 12.0),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -171,6 +138,7 @@ class _ChatsPageState extends State<ChatsPage> {
               onTap: () {
                 setState(() {
                   _selectedContact = contact['email'];
+                  _contactName = contact['name'];
                 });
               },
             );
@@ -185,16 +153,17 @@ class _ChatsPageState extends State<ChatsPage> {
     return Scaffold(
       backgroundColor: widget.bgColor,
       appBar: AppBar(
-        backgroundColor: widget.bgColor.withOpacity(0.7),
+        backgroundColor: widget.bgColor.withOpacity(0.9),
         elevation: 0,
-        title: Text('Chats', style: TextStyle(color: Colors.white)),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          _selectedContact.isEmpty ? 'Chats' : _contactName,
+          style: TextStyle(color: Colors.white),
+        ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.person_add, color: Colors.white),
-            onPressed: _showInviteDialog,
-          ),
-        ],
       ),
       body: SafeArea(
         child: _selectedContact.isEmpty
@@ -212,8 +181,11 @@ class _ChatsPageState extends State<ChatsPage> {
                             decoration: InputDecoration(
                               hintText: 'Enter a message',
                               hintStyle: TextStyle(color: Colors.white54),
+                              filled: true,
+                              fillColor: Colors.grey[700],
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8.0),
+                                borderSide: BorderSide.none,
                               ),
                               contentPadding: EdgeInsets.symmetric(
                                 vertical: 10.0,
