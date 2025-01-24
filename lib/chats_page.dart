@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 class ChatsPage extends StatefulWidget {
   final Color bgColor;
 
-  ChatsPage({required this.bgColor});
+  const ChatsPage({Key? key, required this.bgColor}) : super(key: key);
 
   @override
   _ChatsPageState createState() => _ChatsPageState();
@@ -13,199 +13,371 @@ class ChatsPage extends StatefulWidget {
 
 class _ChatsPageState extends State<ChatsPage> {
   final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ScrollController _scrollController = ScrollController();
 
-  String _selectedContact = '';
-  String _contactName = 'Contact Name'; // Placeholder for contact name
+  String _selectedUserId = '';
+  String _selectedUserName = '';
+  bool _isAddFriendMode = false;
+  List<Map<String, dynamic>> _searchResults = [];
+
   User? get currentUser => _auth.currentUser;
 
   Future<void> _sendMessage() async {
-    if (_messageController.text.isNotEmpty && _selectedContact.isNotEmpty) {
-      await _firestore.collection('messages').add({
-        'text': _messageController.text,
-        'sender': currentUser?.email,
-        'receiver': _selectedContact,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+    if (_messageController.text.trim().isEmpty || _selectedUserId.isEmpty)
+      return;
+
+    try {
+      final timestamp = FieldValue.serverTimestamp();
+      final messageData = {
+        'text': _messageController.text.trim(),
+        'senderId': currentUser?.uid,
+        'receiverId': _selectedUserId,
+        'timestamp': timestamp,
+      };
+
+      // Add to sender's messages
+      await _firestore
+          .collection('users')
+          .doc(currentUser?.uid)
+          .collection('chats')
+          .doc(_selectedUserId)
+          .collection('messages')
+          .add(messageData);
+
+      // Add to receiver's messages
+      await _firestore
+          .collection('users')
+          .doc(_selectedUserId)
+          .collection('chats')
+          .doc(currentUser?.uid)
+          .collection('messages')
+          .add(messageData);
+
       _messageController.clear();
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending message: $e')),
+      );
     }
   }
 
-  Widget _buildMessageList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('messages')
-          .where('receiver', isEqualTo: _selectedContact)
-          .orderBy('timestamp')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
+  Future<void> _searchUsers(String query) async {
+    if (query.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
 
-        if (!snapshot.hasData) {
-          return Center(child: CircularProgressIndicator());
-        }
+    try {
+      final usersSnapshot = await _firestore
+          .collection('users')
+          .where('email', isGreaterThanOrEqualTo: query)
+          .where('email', isLessThan: query + 'z')
+          .get();
 
-        final messages = snapshot.data!.docs;
-        if (messages.isEmpty) {
-          return Center(child: Text('No messages yet.'));
-        }
-
-        return ListView.builder(
-          reverse: true,
-          itemCount: messages.length,
-          itemBuilder: (context, index) {
-            var message = messages[index];
-            return GestureDetector(
-              onLongPress: () async {
-                bool? confirmDelete = await showDialog(
-                  context: context,
-                  builder: (context) {
-                    return AlertDialog(
-                      title: Text('Delete Message'),
-                      content:
-                          Text('Are you sure you want to delete this message?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          child: Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          child: Text('Delete'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-
-                if (confirmDelete ?? false) {
-                  await _firestore
-                      .collection('messages')
-                      .doc(message.id)
-                      .delete();
-                }
-              },
-              child: Container(
-                margin: EdgeInsets.symmetric(vertical: 5.0, horizontal: 10.0),
-                padding: EdgeInsets.all(10.0),
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      message['text'],
-                      style: TextStyle(color: Colors.white, fontSize: 16.0),
-                    ),
-                    SizedBox(height: 5.0),
-                    Text(
-                      message['sender'],
-                      style: TextStyle(color: Colors.white54, fontSize: 12.0),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+      setState(() {
+        _searchResults = usersSnapshot.docs
+            .where((doc) => doc.id != currentUser?.uid)
+            .map((doc) => {
+                  'id': doc.id,
+                  'firstName': doc['firstName'],
+                  'lastName': doc['lastName'],
+                  'email': doc['email'],
+                })
+            .toList();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error searching users: $e')),
+      );
+    }
   }
 
-  Widget _buildContactsList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('users').snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return Center(child: CircularProgressIndicator());
-        }
+  Future<void> _addFriend(String userId) async {
+    try {
+      // Add to current user's friends
+      await _firestore.collection('users').doc(currentUser?.uid).update({
+        'friends': FieldValue.arrayUnion([userId])
+      });
 
-        final contacts = snapshot.data!.docs;
-        return ListView.builder(
-          itemCount: contacts.length,
-          itemBuilder: (context, index) {
-            var contact = contacts[index];
-            return ListTile(
-              title: Text(
-                contact['name'],
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                setState(() {
-                  _selectedContact = contact['email'];
-                  _contactName = contact['name'];
-                });
-              },
-            );
-          },
-        );
-      },
-    );
+      // Add current user to friend's friends list
+      await _firestore.collection('users').doc(userId).update({
+        'friends': FieldValue.arrayUnion([currentUser?.uid])
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Friend added successfully!')),
+      );
+      setState(() => _isAddFriendMode = false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding friend: $e')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: widget.bgColor,
-      appBar: AppBar(
-        backgroundColor: widget.bgColor.withOpacity(0.9),
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          _selectedContact.isEmpty ? 'Chats' : _contactName,
-          style: TextStyle(color: Colors.white),
-        ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: _selectedContact.isEmpty
-            ? _buildContactsList()
-            : Column(
-                children: [
-                  Expanded(child: _buildMessageList()),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _messageController,
-                            decoration: InputDecoration(
-                              hintText: 'Enter a message',
-                              hintStyle: TextStyle(color: Colors.white54),
-                              filled: true,
-                              fillColor: Colors.grey[700],
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8.0),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 10.0,
-                                horizontal: 15.0,
-                              ),
-                            ),
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        SizedBox(width: 8.0),
-                        IconButton(
-                          icon: Icon(Icons.send, color: Colors.white),
-                          onPressed: _sendMessage,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+    return WillPopScope(
+      onWillPop: () async {
+        if (_selectedUserId.isNotEmpty) {
+          setState(() {
+            _selectedUserId = '';
+            _selectedUserName = '';
+          });
+          return false;
+        }
+        return true;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[900],
+        appBar: AppBar(
+          backgroundColor: Colors.grey[850],
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              if (_selectedUserId.isNotEmpty) {
+                setState(() {
+                  _selectedUserId = '';
+                  _selectedUserName = '';
+                });
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
+          title: Text(
+            _selectedUserId.isEmpty ? 'Chats' : _selectedUserName,
+            style: const TextStyle(fontSize: 20),
+          ),
+          actions: [
+            if (_selectedUserId.isEmpty)
+              IconButton(
+                icon: Icon(_isAddFriendMode ? Icons.close : Icons.person_add),
+                onPressed: () =>
+                    setState(() => _isAddFriendMode = !_isAddFriendMode),
               ),
+          ],
+        ),
+        body: _selectedUserId.isEmpty
+            ? _isAddFriendMode
+                ? _buildAddFriendView()
+                : _buildFriendsList()
+            : _buildChatView(),
       ),
     );
+  }
+
+  Widget _buildAddFriendView() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _searchUsers,
+            decoration: InputDecoration(
+              hintText: 'Search by email...',
+              filled: true,
+              fillColor: Colors.grey[800],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              prefixIcon: const Icon(Icons.search),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _searchResults.length,
+            itemBuilder: (context, index) {
+              final user = _searchResults[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  child: Text(user['firstName'][0].toUpperCase()),
+                ),
+                title: Text('${user['firstName']} ${user['lastName']}'),
+                subtitle: Text(user['email']),
+                trailing: IconButton(
+                  icon: const Icon(Icons.person_add),
+                  onPressed: () => _addFriend(user['id']),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFriendsList() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _firestore.collection('users').doc(currentUser?.uid).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final friends = List<String>.from(snapshot.data?['friends'] ?? []);
+        if (friends.isEmpty) {
+          return const Center(
+            child: Text(
+              'No friends yet.\nTap the + button to add friends!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          );
+        }
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: _firestore
+              .collection('users')
+              .where(FieldPath.documentId, whereIn: friends)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            return ListView.builder(
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                final friend = snapshot.data!.docs[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    child: Text(friend['firstName'][0].toUpperCase()),
+                  ),
+                  title: Text('${friend['firstName']} ${friend['lastName']}'),
+                  subtitle: Text(friend['email']),
+                  onTap: () {
+                    setState(() {
+                      _selectedUserId = friend.id;
+                      _selectedUserName =
+                          '${friend['firstName']} ${friend['lastName']}';
+                    });
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildChatView() {
+    return Column(
+      children: [
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('users')
+                .doc(currentUser?.uid)
+                .collection('chats')
+                .doc(_selectedUserId)
+                .collection('messages')
+                .orderBy('timestamp', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final messages = snapshot.data!.docs;
+              return ListView.builder(
+                reverse: true,
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                itemCount: messages.length,
+                itemBuilder: (context, index) {
+                  final message = messages[index];
+                  final isMe = message['senderId'] == currentUser?.uid;
+
+                  return Align(
+                    alignment:
+                        isMe ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isMe ? Colors.blue : Colors.grey[800],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.7,
+                      ),
+                      child: Text(
+                        message['text'],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.grey[850],
+          child: SafeArea(
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      filled: true,
+                      fillColor: Colors.grey[800],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Colors.blue,
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white),
+                    onPressed: _sendMessage,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 }

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
 class EditProfilePage extends StatefulWidget {
+  const EditProfilePage({Key? key}) : super(key: key);
+
   @override
   _EditProfilePageState createState() => _EditProfilePageState();
 }
@@ -18,9 +21,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final ImagePicker _picker = ImagePicker();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   User? _user;
   String? _profileImageUrl;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -28,76 +33,117 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _loadUserData();
   }
 
-  // Function to pick an image
   Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _profileImage = File(pickedFile.path);
-      });
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 75,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _profileImage = File(pickedFile.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
     }
   }
 
-  // Function to load user data from Firestore
   Future<void> _loadUserData() async {
-    _user = _auth.currentUser;
-    if (_user != null) {
-      DocumentSnapshot userData =
-          await _firestore.collection('users').doc(_user!.uid).get();
+    setState(() => _isLoading = true);
+    try {
+      _user = _auth.currentUser;
+      if (_user != null) {
+        final userData =
+            await _firestore.collection('users').doc(_user!.uid).get();
 
-      setState(() {
-        _firstNameController.text = userData['firstName'];
-        _lastNameController.text = userData['lastName'];
-        _emailController.text = _user!.email!;
-        _profileImageUrl = userData['profilePic'] ?? ''; // Profile pic URL
-      });
+        if (userData.exists) {
+          setState(() {
+            _firstNameController.text = userData.get('firstName') ?? '';
+            _lastNameController.text = userData.get('lastName') ?? '';
+            _emailController.text = _user!.email ?? '';
+            _profileImageUrl = userData.get('profileImage');
+          });
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading user data: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  // Function to update the user profile
-  Future<void> _updateUserProfile() async {
-    if (_user != null) {
-      String imageUrl = _profileImageUrl ?? '';
+  Future<String?> _uploadImageToFirebase(File image) async {
+    try {
+      final String fileName =
+          'profile_${_user!.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final Reference storageRef =
+          _storage.ref().child('profile_images/$fileName');
 
-      // If a new image is selected, upload it to Firebase Storage (optional)
+      final UploadTask uploadTask = storageRef.putFile(
+        image,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final TaskSnapshot snapshot = await uploadTask;
+      final String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      return downloadUrl;
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error uploading image: $e')),
+      );
+      return null;
+    }
+  }
+
+  Future<void> _updateUserProfile() async {
+    if (_user == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      String? imageUrl = _profileImageUrl;
+
       if (_profileImage != null) {
-        // Here you can add Firebase Storage upload logic if needed
-        // Example:
-        // imageUrl = await _uploadImageToFirebase(_profileImage!);
+        imageUrl = await _uploadImageToFirebase(_profileImage!);
+        if (imageUrl == null) return; // Error uploading image
       }
 
-      try {
-        // Update user data in Firestore
-        await _firestore.collection('users').doc(_user!.uid).update({
-          'firstName': _firstNameController.text.trim(),
-          'lastName': _lastNameController.text.trim(),
-          'profilePic': imageUrl,
-        });
+      final userRef = _firestore.collection('users').doc(_user!.uid);
 
-        // Show success alert dialog
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Success'),
-              content: Text('Profile updated successfully!'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(); // Close dialog
-                  },
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
+      await userRef.update({
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'profileImage': imageUrl,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _profileImageUrl = imageUrl;
+        _profileImage = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully!')),
         );
-      } catch (e) {
-        print(e.toString());
+        Navigator.pop(context); // Return to previous screen
+      }
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error updating profile: $e')),
         );
       }
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -105,60 +151,105 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Profile'),
+        title: const Text('Edit Profile'),
+        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            GestureDetector(
-              onTap: _pickImage,
-              child: CircleAvatar(
-                radius: 40,
-                backgroundImage: _profileImage != null
-                    ? FileImage(_profileImage!) // Display new picked image
-                    : (_profileImageUrl != null && _profileImageUrl!.isNotEmpty
-                            ? NetworkImage(_profileImageUrl!)
-                            : AssetImage('assets/default_profile.png'))
-                        as ImageProvider, // Existing profile pic or default
-                child: _profileImage == null
-                    ? Icon(Icons.add_a_photo, size: 40, color: Colors.white)
-                    : null,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 60,
+                          backgroundColor: Colors.grey[200],
+                          backgroundImage: _getProfileImage(),
+                          child:
+                              _profileImage == null && _profileImageUrl == null
+                                  ? const Icon(Icons.person,
+                                      size: 60, color: Colors.grey)
+                                  : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _firstNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'First Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _lastNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Last Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _emailController,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                      filled: true,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _updateUserProfile,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: const Text('Save Changes'),
+                    ),
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 20),
-            TextField(
-              controller: _firstNameController,
-              decoration: InputDecoration(
-                labelText: 'First Name',
-                hintText: 'Enter your first name',
-              ),
-            ),
-            SizedBox(height: 10),
-            TextField(
-              controller: _lastNameController,
-              decoration: InputDecoration(
-                labelText: 'Last Name',
-                hintText: 'Enter your last name',
-              ),
-            ),
-            SizedBox(height: 10),
-            TextField(
-              controller: _emailController,
-              readOnly: true, // Email is not editable
-              decoration: InputDecoration(
-                labelText: 'Email',
-                hintText: 'Enter your email',
-              ),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _updateUserProfile,
-              child: Text('Save Changes'),
-            ),
-          ],
-        ),
-      ),
     );
+  }
+
+  ImageProvider? _getProfileImage() {
+    if (_profileImage != null) {
+      return FileImage(_profileImage!);
+    } else if (_profileImageUrl != null && _profileImageUrl!.isNotEmpty) {
+      return NetworkImage(_profileImageUrl!);
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _emailController.dispose();
+    super.dispose();
   }
 }

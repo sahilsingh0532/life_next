@@ -5,55 +5,40 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // For saving user data
+import 'package:life_next/home_screen.dart';
+import 'package:provider/provider.dart';
 import 'chats_page.dart'; // Import the ChatsPage from chats_page.dart
-import 'EditProfilePage.dart';
+import 'settings.dart';
+import 'theme.dart';
+import 'auth_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  runApp(MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Life Next Messenger',
-      theme: ThemeData.light().copyWith(
-        primaryColor: Colors.white,
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.grey, // Grey color for app bar text
-        ),
-        textTheme: TextTheme(
-          bodyLarge:
-              TextStyle(color: Colors.grey), // Grey text for large body text
-          bodyMedium: TextStyle(
-              color: Colors.grey[600]), // Slightly darker grey for medium text
-        ),
-        colorScheme:
-            ColorScheme.fromSwatch().copyWith(secondary: Colors.blueAccent),
-        bottomAppBarTheme: BottomAppBarTheme(color: Colors.grey[200]),
-      ),
-      darkTheme: ThemeData.dark().copyWith(
-        primaryColor: Colors.black,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.grey, // Grey color for dark mode app bar text
-        ),
-        textTheme: TextTheme(
-          bodyLarge: TextStyle(color: Colors.grey), // Grey text for dark mode
-          bodyMedium: TextStyle(color: Colors.grey[600]),
-        ),
-        colorScheme:
-            ColorScheme.fromSwatch().copyWith(secondary: Colors.redAccent),
-        bottomAppBarTheme: BottomAppBarTheme(color: Colors.grey[900]),
-      ),
-      themeMode: ThemeMode.system, // Switch based on system settings
-      home: SplashScreen(),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Life Next Messenger',
+          theme: ThemeProvider.lightTheme,
+          darkTheme: ThemeProvider.darkTheme,
+          themeMode: themeProvider.themeMode,
+          home: SplashScreen(),
+        );
+      },
     );
   }
 }
@@ -110,7 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey, // Grey text color
+                  color: Colors.grey,
                 ),
               ),
             ],
@@ -133,8 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
       TextEditingController();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
-  final String _defaultProfileImageUrl =
-      'https://example.com/default_profile.png';
+  final String _defaultProfileImageUrl = 'defaultProfilePic.png';
 
   bool _isSignupMode = false;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -174,8 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
         'email': _emailController.text.trim(),
-        'profileImage':
-            _defaultProfileImageUrl, // Using the default profile image
+        'profileImage': _defaultProfileImageUrl,
       });
 
       await userCredential.user!.sendEmailVerification();
@@ -281,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: () => _signInWithGoogle(),
               style: ElevatedButton.styleFrom(
                 foregroundColor: Colors.black,
-                backgroundColor: const Color.fromARGB(61, 244, 67, 54),
+                backgroundColor: const Color.fromARGB(85, 252, 29, 13),
                 side: BorderSide(color: Colors.black),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -351,8 +334,8 @@ class _MainChatsPageState extends State<MainChatsPage> {
       bottomNavigationBar: CurvedNavigationBar(
         backgroundColor: Colors.transparent,
         items: <Widget>[
+          Icon(Icons.home, size: 30),
           Icon(Icons.chat, size: 30),
-          Icon(Icons.flash_on, size: 30),
           Icon(Icons.star, size: 30),
           Icon(Icons.settings, size: 30),
         ],
@@ -371,13 +354,13 @@ class _MainChatsPageState extends State<MainChatsPage> {
   Widget _getPage(int index) {
     switch (index) {
       case 0:
-        return ChatsPage(bgColor: Colors.transparent); // Your chat page
+        return HomeScreen();
       case 1:
-        return Center(child: Text('Discover'));
+        return ChatsPage(bgColor: Colors.transparent); // Your chat page
       case 2:
         return Center(child: Text('Favorites'));
       case 3:
-        return EditProfilePage();
+        return SettingsPage();
       default:
         return Center(child: Text('Unknown'));
     }
