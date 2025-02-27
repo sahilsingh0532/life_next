@@ -5,7 +5,6 @@ import 'package:life_next/login_screen.dart';
 import 'package:life_next/main.dart';
 import 'EditProfilePage.dart';
 import 'memo_screen.dart';
-import 'auth_screen.dart';
 import 'package:provider/provider.dart';
 import 'main.dart';
 import 'theme.dart';
