@@ -1,7 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:life_next/login_screen.dart';
 import 'package:life_next/main.dart';
 import 'EditProfilePage.dart';
 import 'memo_screen.dart';
@@ -11,18 +11,6 @@ import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({Key? key}) : super(key: key);
-
-  Future<Map<String, dynamic>> _getUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      return doc.data() ?? {};
-    }
-    return {};
-  }
 
   Future<void> _showLogoutDialog(BuildContext context) async {
     return showDialog(
@@ -58,27 +46,23 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _getUserData(),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(FirebaseAuth.instance.currentUser!.uid)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final userData = snapshot.data ?? {};
+          final userData = snapshot.data?.data() as Map<String, dynamic>? ?? {};
           final firstName = userData['firstName'] ?? 'User';
           final profileImage = userData['profileImage'];
 
           return SafeArea(
             child: Column(
               children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
                 const SizedBox(height: 20),
                 Text(
                   'Hello,',
@@ -87,15 +71,6 @@ class SettingsPage extends StatelessWidget {
                 Text(
                   firstName,
                   style: Theme.of(context).textTheme.headlineLarge,
-                ),
-                const SizedBox(height: 20),
-                CircleAvatar(
-                  radius: 50,
-                  backgroundImage:
-                      profileImage != null ? NetworkImage(profileImage) : null,
-                  child: profileImage == null
-                      ? const Icon(Icons.person, size: 50)
-                      : null,
                 ),
                 const SizedBox(height: 40),
                 _SettingsItem(
@@ -134,7 +109,11 @@ class SettingsPage extends StatelessWidget {
                   },
                 ),
                 _SettingsItem(
-                  title: 'About Us',
+                  title: 'About LifeNext',
+                  onTap: () {},
+                ),
+                _SettingsItem(
+                  title: 'About RCOP',
                   onTap: () {},
                 ),
                 _SettingsItem(

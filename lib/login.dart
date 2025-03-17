@@ -721,7 +721,7 @@ class _LoginScreenState extends State<LoginScreen>
       ),
     )
         .animate()
-        .scale(duration: 200.ms, curve: Curves.easeInOut)
+        .scale(duration: 2000.ms, curve: Curves.easeInOut)
         .then()
         .shimmer(duration: 700.ms, color: Colors.white.withOpacity(0.2));
   }
@@ -1019,5 +1019,3 @@ class PlasmaPainter extends CustomPainter {
   @override
   bool shouldRepaint(PlasmaPainter oldDelegate) => true;
 }
-
-// Import math library

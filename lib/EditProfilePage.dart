@@ -1,9 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -21,10 +21,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final ImagePicker _picker = ImagePicker();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   User? _user;
-  String? _profileImageUrl;
+  String? _profileImageBase64;
   bool _isLoading = false;
 
   @override
@@ -43,8 +42,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
 
       if (pickedFile != null) {
+        File imageFile = File(pickedFile.path);
+        String base64Image = base64Encode(await imageFile.readAsBytes());
+
         setState(() {
-          _profileImage = File(pickedFile.path);
+          _profileImage = imageFile;
+          _profileImageBase64 = base64Image;
         });
       }
     } catch (e) {
@@ -67,7 +70,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             _firstNameController.text = userData.get('firstName') ?? '';
             _lastNameController.text = userData.get('lastName') ?? '';
             _emailController.text = _user!.email ?? '';
-            _profileImageUrl = userData.get('profileImage');
+            _profileImageBase64 = userData.get('profileImage');
           });
         }
       }
@@ -80,61 +83,25 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  Future<String?> _uploadImageToFirebase(File image) async {
-    try {
-      final String fileName =
-          'profile_${_user!.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final Reference storageRef =
-          _storage.ref().child('profile_images/$fileName');
-
-      final UploadTask uploadTask = storageRef.putFile(
-        image,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-
-      final TaskSnapshot snapshot = await uploadTask;
-      final String downloadUrl = await snapshot.ref.getDownloadURL();
-
-      return downloadUrl;
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading image: $e')),
-      );
-      return null;
-    }
-  }
-
   Future<void> _updateUserProfile() async {
     if (_user == null) return;
 
     setState(() => _isLoading = true);
     try {
-      String? imageUrl = _profileImageUrl;
-
-      if (_profileImage != null) {
-        imageUrl = await _uploadImageToFirebase(_profileImage!);
-        if (imageUrl == null) return; // Error uploading image
-      }
-
       final userRef = _firestore.collection('users').doc(_user!.uid);
 
       await userRef.update({
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
-        'profileImage': imageUrl,
+        'profileImage': _profileImageBase64, // Store Base64 string
         'lastUpdated': FieldValue.serverTimestamp(),
-      });
-
-      setState(() {
-        _profileImageUrl = imageUrl;
-        _profileImage = null;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile updated successfully!')),
         );
-        Navigator.pop(context); // Return to previous screen
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -145,6 +112,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  ImageProvider<Object> _getProfileImage() {
+    if (_profileImage != null) {
+      return FileImage(_profileImage!);
+    } else if (_profileImageBase64 != null && _profileImageBase64!.isNotEmpty) {
+      try {
+        return MemoryImage(base64Decode(_profileImageBase64!));
+      } catch (e) {
+        print("❌ Error decoding Base64 image: $e");
+      }
+    }
+    return const AssetImage(
+        "assets/defaultProfilePic.png"); // Default profile image
   }
 
   @override
@@ -168,11 +149,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           radius: 60,
                           backgroundColor: Colors.grey[200],
                           backgroundImage: _getProfileImage(),
-                          child:
-                              _profileImage == null && _profileImageUrl == null
-                                  ? const Icon(Icons.person,
-                                      size: 60, color: Colors.grey)
-                                  : null,
                         ),
                         Positioned(
                           bottom: 0,
@@ -234,15 +210,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
     );
-  }
-
-  ImageProvider? _getProfileImage() {
-    if (_profileImage != null) {
-      return FileImage(_profileImage!);
-    } else if (_profileImageUrl != null && _profileImageUrl!.isNotEmpty) {
-      return NetworkImage(_profileImageUrl!);
-    }
-    return null;
   }
 
   @override
