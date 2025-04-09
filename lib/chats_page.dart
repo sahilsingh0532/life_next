@@ -29,7 +29,8 @@ class _ChatsPageState extends State<ChatsPage>
   String _selectedUserId = '';
   String _selectedUserName = '';
   bool _isAddFriendMode = false;
-  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false; // ✅ this prevents the "undefined" error
+  List<Map<String, dynamic>> _searchResults = []; // ✅ needed for results
   Set<String> _selectedFriends = {};
   List<String> _selectedMessages = [];
   bool _isSelectionMode = false;
@@ -45,6 +46,84 @@ class _ChatsPageState extends State<ChatsPage>
       duration: const Duration(milliseconds: 300),
     );
     _loadChatBackground();
+  }
+
+  Future<void> _searchUsers(String email) async {
+    if (email.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() => _isSearching = true);
+
+    try {
+      final QuerySnapshot result = await _firestore
+          .collection('users')
+          .where('email', isGreaterThanOrEqualTo: email.toLowerCase())
+          .where('email', isLessThanOrEqualTo: email.toLowerCase() + '\uf8ff')
+          .limit(10)
+          .get();
+
+      if (!mounted) return;
+
+      setState(() {
+        _searchResults = result.docs
+            .where(
+                (doc) => doc.id != currentUser?.uid) // optional: exclude self
+            .map((doc) => {
+                  'id': doc.id,
+                  'email': doc.get('email'),
+                  'name': doc.get('firstName') ?? 'Unknown',
+                  'lastName': doc.get('lastName') ?? '',
+                })
+            .toList();
+        _isSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error searching users: $e')),
+      );
+    }
+  }
+
+  Future<void> _sendFriendRequest(String receiverId) async {
+    if (receiverId == currentUser?.uid) return;
+
+    try {
+      final existing = await _firestore
+          .collection('friendRequests')
+          .where('senderId', isEqualTo: currentUser?.uid)
+          .where('receiverId', isEqualTo: receiverId)
+          .where('status', isEqualTo: 'pending')
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Friend request already sent')),
+        );
+        return;
+      }
+
+      await _firestore.collection('friendRequests').add({
+        'senderId': currentUser?.uid,
+        'receiverId': receiverId,
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Friend request sent')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending request: $e')),
+      );
+    }
   }
 
   Future<void> _loadChatBackground() async {
@@ -95,17 +174,50 @@ class _ChatsPageState extends State<ChatsPage>
     }
   }
 
+  Future<void> _confirmAndDeleteSelectedFriends() async {
+    if (_selectedFriends.isEmpty) return;
+
+    bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Delete Friend'),
+        content:
+            Text('Are you sure you want to delete the selected friend(s)?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteSelectedFriends();
+    }
+  }
+
   Future<void> _deleteSelectedFriends() async {
+    WriteBatch batch = _firestore.batch();
     try {
       for (String friendId in _selectedFriends) {
-        await _firestore.collection('users').doc(currentUser?.uid).update({
+        var userDoc = _firestore.collection('users').doc(currentUser?.uid);
+        var friendDoc = _firestore.collection('users').doc(friendId);
+
+        batch.update(userDoc, {
           'friends': FieldValue.arrayRemove([friendId])
         });
 
-        await _firestore.collection('users').doc(friendId).update({
+        batch.update(friendDoc, {
           'friends': FieldValue.arrayRemove([currentUser?.uid])
         });
       }
+
+      await batch.commit();
 
       setState(() {
         _selectedFriends.clear();
@@ -119,6 +231,30 @@ class _ChatsPageState extends State<ChatsPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error removing friends: $e')),
       );
+    }
+  }
+
+  Future<void> _confirmRemoveFriend() async {
+    final confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Friend'),
+        content: const Text('Are you sure you want to remove this friend?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      _removeFriend();
     }
   }
 
@@ -210,7 +346,10 @@ class _ChatsPageState extends State<ChatsPage>
   void _showFriendOptions() {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -220,7 +359,7 @@ class _ChatsPageState extends State<ChatsPage>
               title: const Text('View Profile'),
               onTap: () {
                 Navigator.pop(context);
-                // Implement view profile
+                // TODO: Implement view profile
               },
             ),
             ListTile(
@@ -228,7 +367,7 @@ class _ChatsPageState extends State<ChatsPage>
               title: const Text('Remove Friend'),
               onTap: () {
                 Navigator.pop(context);
-                _removeFriend();
+                _confirmRemoveFriend();
               },
             ),
             ListTile(
@@ -256,6 +395,7 @@ class _ChatsPageState extends State<ChatsPage>
   Widget _buildAddFriendView(
       Color cardColor, Color textColor, Color subtitleColor) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
@@ -264,6 +404,7 @@ class _ChatsPageState extends State<ChatsPage>
             onChanged: _searchUsers,
             decoration: InputDecoration(
               hintText: 'Search by email...',
+              hintStyle: TextStyle(color: subtitleColor),
               filled: true,
               fillColor: cardColor,
               border: OutlineInputBorder(
@@ -275,79 +416,159 @@ class _ChatsPageState extends State<ChatsPage>
             style: TextStyle(color: textColor),
           ),
         ),
-        Expanded(
-          child: Column(
+        if (_isSearching) const Center(child: CircularProgressIndicator()),
+        if (!_isSearching && _searchResults.isNotEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Pending Friend Requests',
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'Search Results',
                   style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: textColor)),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: _firestore
-                      .collection('friendRequests')
-                      .where('receiverId', isEqualTo: currentUser?.uid)
-                      .where('status', isEqualTo: 'pending')
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(child: Text('No pending requests'));
-                    }
-                    return ListView.builder(
-                      itemCount: snapshot.data!.docs.length,
-                      itemBuilder: (context, index) {
-                        final request = snapshot.data!.docs[index];
-                        return FutureBuilder<DocumentSnapshot>(
-                          future: _firestore
-                              .collection('users')
-                              .doc(request['senderId'])
-                              .get(),
-                          builder: (context, userSnapshot) {
-                            if (!userSnapshot.hasData) {
-                              return const SizedBox.shrink();
-                            }
-                            final userData = userSnapshot.data!.data()
-                                as Map<String, dynamic>;
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.blue,
-                                child: Text(
-                                  userData['firstName'][0].toUpperCase(),
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                              ),
-                              title: Text(
-                                '${userData['firstName']} ${userData['lastName']}',
-                                style: TextStyle(color: textColor),
-                              ),
-                              subtitle: const Text('Sent you a friend request'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.check,
-                                        color: Colors.green),
-                                    onPressed: () => _acceptFriendRequest(
-                                        request.id, request['senderId']),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close,
-                                        color: Colors.red),
-                                    onPressed: () =>
-                                        _rejectFriendRequest(request.id),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
                 ),
               ),
+              const SizedBox(height: 8),
+              ListView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                itemCount: _searchResults.length,
+                itemBuilder: (context, index) {
+                  final user = _searchResults[index];
+                  final fullName = '${user['name']} ${user['lastName']}';
+                  return Card(
+                    color: cardColor,
+                    child: ListTile(
+                      leading: const Icon(Icons.person),
+                      title: Text(
+                        fullName,
+                        style: TextStyle(color: textColor),
+                      ),
+                      subtitle: Text(
+                        user['email'],
+                        style: TextStyle(color: subtitleColor),
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: () => _sendFriendRequest(user['id']),
+                        child: const Text('Add Friend'),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
             ],
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'Pending Friend Requests',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('friendRequests')
+                .where('receiverId', isEqualTo: currentUser?.uid)
+                .where('status', isEqualTo: 'pending')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.hourglass_empty,
+                          size: 64, color: Colors.grey),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No pending requests',
+                        style: TextStyle(fontSize: 16, color: subtitleColor),
+                      ),
+                    ],
+                  ).animate().fadeIn(duration: 400.ms),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final request = snapshot.data!.docs[index];
+                  return FutureBuilder<DocumentSnapshot>(
+                    future: _firestore
+                        .collection('users')
+                        .doc(request['senderId'])
+                        .get(),
+                    builder: (context, userSnapshot) {
+                      if (!userSnapshot.hasData) {
+                        return const SizedBox.shrink();
+                      }
+                      final userData =
+                          userSnapshot.data!.data() as Map<String, dynamic>;
+                      return Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.blue,
+                            child: Text(
+                              userData['firstName'][0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          title: Text(
+                            '${userData['firstName']} ${userData['lastName']}',
+                            style: TextStyle(color: textColor),
+                          ),
+                          subtitle: Text(
+                            'Sent you a friend request',
+                            style: TextStyle(color: subtitleColor),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.check,
+                                    color: Colors.green),
+                                tooltip: 'Accept',
+                                onPressed: () => _acceptFriendRequest(
+                                    request.id, request['senderId']),
+                              ),
+                              IconButton(
+                                icon:
+                                    const Icon(Icons.close, color: Colors.red),
+                                tooltip: 'Reject',
+                                onPressed: () =>
+                                    _rejectFriendRequest(request.id),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ).animate().slideX(
+                            begin: -0.5,
+                            duration: 400.ms,
+                            curve: Curves.easeOut,
+                          );
+                    },
+                  );
+                },
+              );
+            },
           ),
         ),
       ],
@@ -358,10 +579,12 @@ class _ChatsPageState extends State<ChatsPage>
     try {
       await _firestore.collection('friendRequests').doc(requestId).delete();
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Friend request rejected')));
+        const SnackBar(content: Text('Friend request rejected')),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error rejecting request: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error rejecting request: $e')),
+      );
     }
   }
 
@@ -483,8 +706,6 @@ class _ChatsPageState extends State<ChatsPage>
     }
   }
 
-  // ... (keep all existing methods)
-
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -496,7 +717,9 @@ class _ChatsPageState extends State<ChatsPage>
     return Theme(
       data: Theme.of(context).copyWith(
         appBarTheme: AppBarTheme(
-          backgroundColor: isDarkMode ? Colors.grey[850] : Colors.white,
+          backgroundColor: isDarkMode
+              ? const Color.fromARGB(255, 209, 5, 250)
+              : const Color.fromARGB(255, 53, 204, 241),
           elevation: 0,
           iconTheme: IconThemeData(color: textColor),
           titleTextStyle: TextStyle(
@@ -530,20 +753,11 @@ class _ChatsPageState extends State<ChatsPage>
               : null,
           actions: [
             if (_selectedUserId.isEmpty && !_isAddFriendMode)
-              IconButton(
-                icon: Icon(_isSelectionMode ? Icons.close : Icons.delete),
-                onPressed: () => setState(() {
-                  if (_isSelectionMode) {
-                    _selectedFriends.clear();
-                  }
-                  _isSelectionMode = !_isSelectionMode;
-                }),
-              ),
-            if (_isSelectionMode && _selectedFriends.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.delete),
-                onPressed: _deleteSelectedFriends,
-              ),
+              if (_isSelectionMode && _selectedFriends.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: _deleteSelectedFriends,
+                ),
             if (_selectedUserId.isEmpty && !_isSelectionMode)
               IconButton(
                 icon: Icon(_isAddFriendMode ? Icons.close : Icons.person_add),
@@ -663,14 +877,6 @@ class _ChatsPageState extends State<ChatsPage>
                 final isSelected = _selectedFriends.contains(friend.id);
 
                 return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        Colors.primaries[index % Colors.primaries.length],
-                    child: Text(
-                      friend['firstName'][0].toUpperCase(),
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
                   title: Text(
                     '${friend['firstName']} ${friend['lastName']}',
                     style: TextStyle(color: textColor),
@@ -870,46 +1076,47 @@ class _ChatsPageState extends State<ChatsPage>
 
   Widget _buildMessageInput(
       Color cardColor, Color textColor, Color subtitleColor) {
+    final bool hasText = _messageController.text.trim().isNotEmpty;
+
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: cardColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
       child: SafeArea(
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.attach_file),
+              icon: Icon(Icons.attach_file, color: textColor),
               onPressed: () {
                 showModalBottomSheet(
                   context: context,
-                  builder: (context) => Container(
+                  shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  backgroundColor: Theme.of(context).cardColor,
+                  builder: (context) => Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        ListTile(
-                          leading: const Icon(Icons.photo),
-                          title: const Text('Send Image'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _pickAndSendMedia(ImageSource.gallery, false);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.videocam),
-                          title: const Text('Send Video'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _pickAndSendMedia(ImageSource.gallery, true);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.camera_alt),
-                          title: const Text('Take Photo'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _pickAndSendMedia(ImageSource.camera, false);
-                          },
-                        ),
+                        _buildMediaOption(
+                            Icons.photo,
+                            'Send Image',
+                            () =>
+                                _pickAndSendMedia(ImageSource.gallery, false)),
+                        _buildMediaOption(Icons.videocam, 'Send Video',
+                            () => _pickAndSendMedia(ImageSource.gallery, true)),
+                        _buildMediaOption(Icons.camera_alt, 'Take Photo',
+                            () => _pickAndSendMedia(ImageSource.camera, false)),
                       ],
                     ),
                   ),
@@ -920,6 +1127,7 @@ class _ChatsPageState extends State<ChatsPage>
               child: TextField(
                 controller: _messageController,
                 style: TextStyle(color: textColor),
+                onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: 'Type a message...',
                   hintStyle: TextStyle(color: subtitleColor),
@@ -929,44 +1137,58 @@ class _ChatsPageState extends State<ChatsPage>
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).primaryColor,
-                    Theme.of(context).primaryColor.withOpacity(0.8),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(context).primaryColor.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
+            AnimatedScale(
+              scale: hasText ? 1.1 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
+              child: GestureDetector(
+                onTap: hasText
+                    ? () => _sendMessage(text: _messageController.text)
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Theme.of(context).primaryColor,
+                        Theme.of(context).primaryColor.withOpacity(0.8),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Theme.of(context).primaryColor.withOpacity(0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.send, color: Colors.white),
-                onPressed: () => _sendMessage(text: _messageController.text),
-              ),
-            ).animate().scale(
-                  duration: 200.ms,
-                  curve: Curves.easeOut,
+                  child: const Icon(Icons.send, color: Colors.white),
                 ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMediaOption(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).iconTheme.color),
+      title: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+      onTap: () {
+        Navigator.pop(context);
+        onTap();
+      },
     );
   }
 
@@ -977,38 +1199,5 @@ class _ChatsPageState extends State<ChatsPage>
     _scrollController.dispose();
     _animationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _searchUsers(String query) async {
-    if (query.isEmpty) {
-      setState(() => _searchResults = []);
-      return;
-    }
-
-    try {
-      final usersSnapshot = await _firestore
-          .collection('users')
-          .where('email', isGreaterThanOrEqualTo: query.toLowerCase())
-          .where('email', isLessThan: query.toLowerCase() + 'z')
-          .get();
-
-      setState(() {
-        _searchResults = usersSnapshot.docs
-            .where((doc) => doc.id != currentUser?.uid)
-            .map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return {
-            'id': doc.id,
-            'firstName': data['firstName'] ?? 'Unknown',
-            'lastName': data['lastName'] ?? '',
-            'email': data['email'] ?? '',
-          };
-        }).toList();
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error searching users: $e')),
-      );
-    }
   }
 }

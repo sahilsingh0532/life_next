@@ -82,7 +82,7 @@ class ThemeProvider with ChangeNotifier {
             fontWeight: FontWeight.bold),
       ),
       colorScheme: ColorScheme.dark(
-        primary: const Color(0xFF121212), // Deep Black
+        primary: const Color.fromARGB(255, 255, 249, 249), // Deep Black
         secondary: const Color(0xFFBB86FC), // Soft Purple Accent
         background: const Color(0xFF1E1E1E), // Dark Gray Background
       ),

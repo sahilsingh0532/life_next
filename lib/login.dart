@@ -7,8 +7,8 @@ import 'package:life_next/home_screen.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:simple_animations/simple_animations.dart';
 import 'chats_page.dart';
+import 'community.dart';
 import 'dart:math' as math;
-
 import 'settings.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -82,13 +82,18 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FlutterLogo(size: 100)
+                Image.asset(
+                  'assets/images/peace.png',
+                  width: 100,
+                  height: 100,
+                )
                     .animate()
                     .scale(duration: 1000.ms, curve: Curves.easeOutBack)
                     .then()
                     .shimmer(
-                        duration: 1200.ms,
-                        color: Colors.white.withOpacity(0.8)),
+                      duration: 1200.ms,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
                 SizedBox(height: 20),
                 Text(
                   'Welcome to Life Next Messenger',
@@ -109,9 +114,10 @@ class _SplashScreenState extends State<SplashScreen>
                     .fadeIn(duration: 800.ms, delay: 400.ms)
                     .then()
                     .slide(
-                        duration: 400.ms,
-                        begin: Offset(0, 0.2),
-                        curve: Curves.easeOut),
+                      duration: 400.ms,
+                      begin: Offset(0, 0.2),
+                      curve: Curves.easeOut,
+                    ),
               ],
             ),
           ),
@@ -442,7 +448,7 @@ class _LoginScreenState extends State<LoginScreen>
                         children: <Widget>[
                           // Logo and Title
                           Container(
-                            padding: EdgeInsets.all(16),
+                            padding: EdgeInsets.all(7),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(20),
@@ -456,24 +462,30 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                             child: Column(
                               children: [
-                                FlutterLogo(size: 70)
+                                Image.asset(
+                                  'assets/images/peace.png',
+                                  width: 150,
+                                  height: 100,
+                                )
                                     .animate(
                                         onPlay: (controller) =>
                                             controller.repeat())
                                     .shimmer(
-                                        duration: 2000.ms,
-                                        color: Colors.white.withOpacity(0.8))
+                                      duration: 50.ms,
+                                      color: Colors.white.withOpacity(0.8),
+                                    )
                                     .then()
                                     .scale(
-                                        duration: 700.ms,
-                                        curve: Curves.easeOutBack),
+                                      duration: 7000.ms,
+                                      curve: Curves.easeOutBack,
+                                    ),
                                 SizedBox(height: 16),
                                 Text(
                                   _isSignupMode
                                       ? 'Create Account'
-                                      : 'Welcome Back',
+                                      : 'Welcome to LifeNext',
                                   style: TextStyle(
-                                    fontSize: 28,
+                                    fontSize: 20,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                     shadows: [
@@ -494,7 +506,7 @@ class _LoginScreenState extends State<LoginScreen>
                           Container(
                             padding: EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.black.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
@@ -512,13 +524,13 @@ class _LoginScreenState extends State<LoginScreen>
                                     label: 'First Name',
                                     icon: Icons.person_outline,
                                   ),
-                                  SizedBox(height: 16),
+                                  SizedBox(height: 13),
                                   _buildTextField(
                                     controller: _lastNameController,
                                     label: 'Last Name',
                                     icon: Icons.person_outline,
                                   ),
-                                  SizedBox(height: 16),
+                                  SizedBox(height: 13),
                                 ],
                                 _buildTextField(
                                   controller: _emailController,
@@ -526,7 +538,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   icon: Icons.email_outlined,
                                   keyboardType: TextInputType.emailAddress,
                                 ),
-                                SizedBox(height: 16),
+                                SizedBox(height: 13),
                                 _buildTextField(
                                   controller: _passwordController,
                                   label: 'Password',
@@ -534,7 +546,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   isPassword: true,
                                 ),
                                 if (_isSignupMode) ...[
-                                  SizedBox(height: 16),
+                                  SizedBox(height: 13),
                                   _buildTextField(
                                     controller: _confirmPasswordController,
                                     label: 'Confirm Password',
@@ -545,7 +557,7 @@ class _LoginScreenState extends State<LoginScreen>
                               ],
                             ),
                           ),
-                          SizedBox(height: 30),
+                          SizedBox(height: 15),
 
                           // Action Buttons
                           _isLoading
@@ -651,11 +663,11 @@ class _LoginScreenState extends State<LoginScreen>
         controller: controller,
         obscureText: isPassword,
         keyboardType: keyboardType,
-        style: TextStyle(color: Colors.white),
+        style: TextStyle(color: Colors.grey),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: Colors.white70),
-          prefixIcon: Icon(icon, color: Colors.white70),
+          labelStyle: TextStyle(color: Colors.grey),
+          prefixIcon: Icon(icon, color: const Color.fromARGB(224, 86, 255, 8)),
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
           enabledBorder: OutlineInputBorder(
@@ -664,8 +676,7 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide:
-                BorderSide(color: Colors.white.withOpacity(0.5), width: 2),
+            borderSide: BorderSide(color: Colors.grey, width: 2),
           ),
         ),
       ),
@@ -772,9 +783,9 @@ class _MainChatsPageState extends State<MainChatsPage> {
       case 0:
         return HomeScreen();
       case 1:
-        return ChatsPage(bgColor: Colors.transparent); // Your chat page
+        return ChatsPage(bgColor: Colors.transparent);
       case 2:
-        return Center(child: Text('Favorites'));
+        return CommunityPage();
       case 3:
         return SettingsPage();
       default:

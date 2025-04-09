@@ -29,6 +29,7 @@ dependencies:
   curved_navigation_bar: ^1.0.6
   cloud_firestore: ^5.3.0
   web: 1.1.0
+  uuid: ^4.5.1
   
 
 
@@ -46,7 +47,7 @@ flutter:
 
   assets:
     # Add assets from the images directory to the application.
-    - assets/images/
+    - assets/images/peace.png
     - assets/google_icon.png
     - assets/defaultProfilePic.png
 
