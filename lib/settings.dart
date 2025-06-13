@@ -10,7 +10,9 @@ import 'main.dart';
 import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({Key? key}) : super(key: key);
+  const SettingsPage(
+      {Key? key, required String userName, required String userId})
+      : super(key: key);
 
   Future<void> _showLogoutDialog(BuildContext context) async {
     return showDialog(
@@ -62,26 +64,28 @@ class SettingsPage extends StatelessWidget {
 
           return SafeArea(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
                   'Hello,',
                   style: Theme.of(context).textTheme.headlineMedium,
+                  textAlign: TextAlign.center,
                 ),
                 Text(
                   firstName,
                   style: Theme.of(context).textTheme.headlineLarge,
-                ),
-                const SizedBox(height: 40),
-                _SettingsItem(
-                  title: 'Edit Profile',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => EditProfilePage()),
-                    );
-                  },
+                  textAlign: TextAlign.center,
                 ),
                 _SettingsItem(
                   title: 'Memo',

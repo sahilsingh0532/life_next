@@ -1,14 +1,24 @@
-import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+// Core Flutter packages
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:math' as math;
+import 'dart:async';
+
+// Firebase packages
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart'; // Don't forget to initialize Firebase
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:life_next/home_screen.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+// UI/Animation packages
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:simple_animations/simple_animations.dart';
+
+// Your custom screens/pages (adjust paths as needed)
+import 'home_screen.dart';
 import 'chats_page.dart';
+import 'ai.dart';
 import 'community.dart';
-import 'dart:math' as math;
 import 'settings.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -748,7 +758,7 @@ class MainChatsPage extends StatefulWidget {
 class _MainChatsPageState extends State<MainChatsPage> {
   int _selectedIndex = 0;
   final List<Color> _colors = [
-    const Color.fromARGB(255, 3, 51, 90),
+    const Color.fromARGB(255, 5, 76, 134),
     const Color.fromARGB(255, 13, 126, 17),
     const Color.fromARGB(255, 93, 5, 109),
     const Color.fromARGB(255, 155, 95, 6),
@@ -764,7 +774,7 @@ class _MainChatsPageState extends State<MainChatsPage> {
           Icon(Icons.home, size: 30),
           Icon(Icons.chat, size: 30),
           Icon(Icons.star, size: 30),
-          Icon(Icons.settings, size: 30),
+          Icon(Icons.android, size: 30),
         ],
         color: _colors[_selectedIndex],
         index: _selectedIndex,
@@ -785,9 +795,9 @@ class _MainChatsPageState extends State<MainChatsPage> {
       case 1:
         return ChatsPage(bgColor: Colors.transparent);
       case 2:
-        return CommunityPage();
+        return CommunitiesPage();
       case 3:
-        return SettingsPage();
+        return JerryApp();
       default:
         return Center(child: Text('Unknown'));
     }
