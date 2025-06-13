@@ -75,7 +75,7 @@ class _ChatsPageState extends State<ChatsPage>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SettingsPage(
+        builder: (context) => EnhancedSettingsPage(
           userId: currentUser?.uid ?? '',
           userName: currentUser?.displayName ?? 'User',
         ),
